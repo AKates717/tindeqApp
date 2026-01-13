@@ -1,8 +1,32 @@
 ## global.R ---------------------------------------------------------------
 
 ## Packages
+library(tidyverse)
 library(shiny)
+library(bslib)
 library(reticulate)
+library(shinyWidgets)
+library(shinytoastr)
+
+## -----------------------------------------------------------------------
+## Themes and Formatting
+## -----------------------------------------------------------------------
+
+custom_theme <- bslib::bs_theme(
+  version = 5,
+  preset = "bootstrap",
+  spacer = "0.5rem",
+  # bg = "#FFF",
+  # fg = "#000000",
+  primary = "#000000"
+)
+
+
+
+
+
+
+
 
 ## Reticulate / Python env
 use_condaenv("tindeq", required = TRUE)
@@ -160,3 +184,12 @@ append_and_trim <- function(cur_df, new_df, window_s = 20) {
   }
   out
 }
+
+#filename slug helper
+slugify <- function(x) {
+  x <- trimws(x)
+  x <- gsub("[^A-Za-z0-9]+", "-", x)   # non-alnum -> hyphen
+  x <- gsub("(^-+|-+$)", "", x)        # trim hyphens
+  if (nchar(x) == 0) "NA" else x
+}
+

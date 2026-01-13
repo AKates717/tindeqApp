@@ -1,0 +1,79 @@
+/* Universal book card */
+.ak-card {
+  /* Per-card accent (can be overridden) */
+  --ak-card-accent: var(--bs-primary);
+
+  border: 1px solid var(--bs-border-color);
+  border-radius: 12px;
+  background: var(--bs-body-bg);
+  box-shadow: 0 2px 10px rgba(0,0,0,.04);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+
+/* Hover */
+.ak-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,.08);
+}
+
+/* Headings & text rhythm */
+.ak-card h2, .ak-card h3, .ak-card h4 {
+  font-size: 1.05rem;
+  margin: 0 0 .35rem 0;
+  line-height: 1.2;
+}
+.ak-card p { margin: 0 0 .5rem 0; }
+.ak-card p:last-child { margin-bottom: 0; }
+
+/* Accents */
+.ak-card strong { color: var(--ak-card-accent); }
+.ak-card.has-stripe { border-top: 4px solid var(--ak-card-accent); }
+
+/* Optional variants */
+.ak-card.flat    { border: 0; box-shadow: 0 6px 24px rgba(0,0,0,.06); }
+.ak-card.minimal { box-shadow: none; }
+.ak-card.tight   { padding: 0.5rem 0.75rem; }
+.ak-card.roomy   { padding: 1rem 1.25rem; }
+
+/* Quick accent presets (Bootstrap palette) */
+.ak-card.accent-primary { --ak-card-accent: var(--bs-primary); }
+.ak-card.accent-success { --ak-card-accent: var(--bs-success); }
+.ak-card.accent-info    { --ak-card-accent: var(--bs-info); }
+.ak-card.accent-warning { --ak-card-accent: var(--bs-warning); }
+.ak-card.accent-danger  { --ak-card-accent: var(--bs-danger); }
+
+/* Default heading color; override if needed */
+.ak-card {
+  --ak-card-heading-bg: color-mix(in srgb, var(--bs-tertiary-bg) 80%, var(--bs-body-color) 10%);
+  --ak-card-radius: 12px;               /* keep in sync with your card radius */
+  --ak-pad-x: 1rem;                     /* fallback if .card-body vars not present */
+  --ak-pad-y: 0.75rem;
+}
+
+/* Full-bleed heading inside standard Bootstrap card structure */
+.ak-card .card-body > :is(h1,h2,h3,h4,h5,h6):first-child {
+  background: var(--ak-card-heading-bg);
+  display: block;
+  margin: calc(-1 * var(--bs-card-spacer-y, var(--ak-pad-y)))
+          calc(-1 * var(--bs-card-spacer-x, var(--ak-pad-x)))
+          .5rem;
+  padding: .5rem var(--bs-card-spacer-x, var(--ak-pad-x));
+  border-top-left-radius: var(--ak-card-radius);
+  border-top-right-radius: var(--ak-card-radius);
+}
+
+/* Also handle the case where there is no .card-body wrapper */
+.ak-card > :is(h1,h2,h3,h4,h5,h6):first-child {
+  background: var(--ak-card-heading-bg);
+  display: block;
+  margin: calc(-1 * var(--ak-pad-y)) calc(-1 * var(--ak-pad-x)) .5rem;
+  padding: .5rem var(--ak-pad-x);
+  border-top-left-radius: var(--ak-card-radius);
+  border-top-right-radius: var(--ak-card-radius);
+}
+
+.ak-card.tight { padding: .5rem .75rem; }
+.ak-card p { margin: 0 0 .35rem 0; }
+.ak-card p:last-child { margin-bottom: 0; }
