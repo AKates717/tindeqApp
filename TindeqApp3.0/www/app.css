@@ -77,3 +77,23 @@
 .ak-card.tight { padding: .5rem .75rem; }
 .ak-card p { margin: 0 0 .35rem 0; }
 .ak-card p:last-child { margin-bottom: 0; }
+
+
+
+
+
+
+
+
+
+
+
+/* New specifically for this app */
+.vb-number .shiny-text-output {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+
+

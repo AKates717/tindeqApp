@@ -1,42 +1,30 @@
 ## global.R ---------------------------------------------------------------
 
 ## Packages
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(readr)
 library(shiny)
 library(bslib)
+library(bsicons)
 library(reticulate)
 library(shinyWidgets)
-library(shinytoastr)
+library(gt)
+
+source("helpers.R")
 
 ## -----------------------------------------------------------------------
-## Themes and Formatting
-## -----------------------------------------------------------------------
-
-custom_theme <- bslib::bs_theme(
-  version = 5,
-  preset = "bootstrap",
-  spacer = "0.5rem",
-  # bg = "#FFF",
-  # fg = "#000000",
-  primary = "#000000"
-)
-
-
-
-
-
-
-
-
 ## Reticulate / Python env
-use_condaenv("tindeq", required = TRUE)
+## -----------------------------------------------------------------------
 
-## (Optional) sanity check: print which python is being used
-# message("Python: ", py_config()$python)
+use_condaenv("tindeq", required = TRUE)
 
 ## -----------------------------------------------------------------------
 ## Python BLE streaming engine (Bleak in a background thread)
-## Defines: start_stream(), stop_stream(), get_samples(clear=TRUE), is_streaming()
+## Defines:
+##   start_stream(), stop_stream(), get_samples(clear=TRUE),
+##   is_streaming(), get_debug()
 ## -----------------------------------------------------------------------
 
 py_run_string("
@@ -55,7 +43,10 @@ OP_STOP  = 0x66
 def tlv_cmd(opcode, value=b''):
     return bytes([opcode, len(value)]) + value
 
+# --------------------------------------------------------------------
 # Shared state (Python-side)
+# --------------------------------------------------------------------
+
 _stream = {
   'running': False,
   'thread': None,
@@ -63,37 +54,73 @@ _stream = {
   'client': None,
   'samples': [],      # list of (t_us, weight)
   'lock': threading.Lock(),
-  'name_prefix': 'Progressor_1827',
+  'name_prefix': 'Progressor_3177',
   'auto_tare': True
+}
+
+# Debug counters to diagnose effective sampling rate
+_debug = {
+  'packets': 0,     # BLE notifications received
+  'samples': 0,     # weight samples decoded
+  'last_len': 0,    # last notification payload length
+  'last_t_us': None
 }
 
 def _append_sample(t_us, w):
     with _stream['lock']:
         _stream['samples'].append((t_us, w))
-        # keep buffer bounded
         if len(_stream['samples']) > 5000:
             _stream['samples'] = _stream['samples'][-5000:]
 
+    _debug['samples'] += 1
+    _debug['last_t_us'] = t_us
+
 async def _run_stream():
+    # Scan for device (fast startup)
     devices = await BleakScanner.discover(timeout=2.0)
+
     target = None
     for d in devices:
         if (d.name or '').startswith(_stream['name_prefix']):
             target = d
             break
+
     if target is None:
         _stream['running'] = False
         return
 
+    # IMPORTANT:
+    # Parse *all* TLVs in a single notification payload
     def handle_notify(sender, data: bytearray):
         b = bytes(data)
-        if len(b) < 2: return
-        code, ln = b[0], b[1]
-        val = b[2:2+ln]
-        if code == 0x01 and ln >= 8:
-            w = struct.unpack('<f', val[0:4])[0]
-            t = struct.unpack('<I', val[4:8])[0]
-            _append_sample(t, w)
+        _debug['packets'] += 1
+        _debug['last_len'] = len(b)
+
+        i = 0
+        while i + 2 <= len(b):
+            code = b[i]
+            ln   = b[i + 1]
+            j = i + 2 + ln
+            if j > len(b):
+                break
+
+            val = b[i + 2 : j]
+
+            # Weight measurement TLV (0x01):
+            # value may contain MULTIPLE samples back-to-back:
+            # each sample = float32 weight + uint32 timestamp (8 bytes)
+            if code == 0x01 and ln >= 8:
+                n = (ln // 8) * 8
+                for k in range(0, n, 8):
+                    w = struct.unpack('<f', val[k:k+4])[0]
+                    t = struct.unpack('<I', val[k+4:k+8])[0]
+                    _append_sample(t, w)
+
+            i = j
+            
+            
+            
+            
 
     async with BleakClient(target) as client:
         _stream['client'] = client
@@ -129,14 +156,22 @@ def _thread_main():
         _stream['loop'] = None
         _stream['running'] = False
 
-def start_stream(name_prefix='Progressor_1827', auto_tare=True, reset_buffer=True):
+def start_stream(name_prefix='Progressor_3177', auto_tare=True, reset_buffer=True):
     if _stream['running']:
         return True
+
     _stream['name_prefix'] = name_prefix
     _stream['auto_tare'] = bool(auto_tare)
+
     if reset_buffer:
         with _stream['lock']:
             _stream['samples'] = []
+
+        _debug['packets'] = 0
+        _debug['samples'] = 0
+        _debug['last_len'] = 0
+        _debug['last_t_us'] = None
+
     _stream['running'] = True
     th = threading.Thread(target=_thread_main, daemon=True)
     _stream['thread'] = th
@@ -156,40 +191,11 @@ def get_samples(clear=True):
 
 def is_streaming():
     return bool(_stream['running'])
+
+def get_debug():
+    return dict(_debug)
 ")
 
-## -----------------------------------------------------------------------
-## R helpers for server.R
-## -----------------------------------------------------------------------
 
-# Convert python list of (t_us, weight) into an R data.frame
-samples_to_df <- function(samps) {
-  if (length(samps) == 0) {
-    return(data.frame(t_us = numeric(0), weight = numeric(0), t_s = numeric(0)))
-  }
-  df <- data.frame(
-    t_us   = vapply(samps, function(x) x[[1]], numeric(1)),
-    weight = vapply(samps, function(x) x[[2]], numeric(1))
-  )
-  df$t_s <- df$t_us / 1e6
-  df
-}
 
-# Append new samples to an existing df and keep last `window_s` seconds
-append_and_trim <- function(cur_df, new_df, window_s = 20) {
-  out <- rbind(cur_df, new_df)
-  if (nrow(out) >= 2) {
-    tmax <- max(out$t_s)
-    out <- out[out$t_s >= (tmax - window_s), , drop = FALSE]
-  }
-  out
-}
-
-#filename slug helper
-slugify <- function(x) {
-  x <- trimws(x)
-  x <- gsub("[^A-Za-z0-9]+", "-", x)   # non-alnum -> hyphen
-  x <- gsub("(^-+|-+$)", "", x)        # trim hyphens
-  if (nchar(x) == 0) "NA" else x
-}
 
