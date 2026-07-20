@@ -28,7 +28,7 @@ ui <- page_navbar(
         width = "25%",
         # --- session metadata ---
         selectInput("athlete_name", "Name",
-                    choices = c("Andrew Kates", "Homer Simpson", "Frank Reynolds"),
+                    choices = c("Andrew Kates", "Homer Simpson", "Frank Reynolds", "Marielle Thompson"),
                     selected = "Andrew Kates"),
         selectInput("test_type", "Test Type",
                     choices = c("Quads", "Hamstrings"),
