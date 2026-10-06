@@ -63,9 +63,16 @@ server <- function(input, output, session) {
   
   observeEvent(input$start, {
     
-    #Loading Notification after button push
-    show_connecting_modal()
-    start_click_time(Sys.time())
+    # Require athlete before starting
+    if (!isTruthy(input$athlete_name)) {
+      showModal(modalDialog(
+        title = "Select athlete",
+        "Please select an athlete before starting collection.",
+        easyClose = TRUE,
+        footer = modalButton("OK")
+      ))
+      return()
+    }
     
     # Require limb before starting
     if (is.null(input$limb) || !nzchar(input$limb)) {
@@ -77,6 +84,10 @@ server <- function(input, output, session) {
       ))
       return()
     }
+    
+    #Loading Notification after button push (once the checks have passed)
+    show_connecting_modal()
+    start_click_time(Sys.time())
     
     # # reset full session
     # session_df(data.frame(
@@ -453,13 +464,13 @@ server <- function(input, output, session) {
   
   # Initialize + keep Name/Test/Limb up to date as user changes inputs
   observe({
-    req(input$athlete_name, input$test_type)  # filled from the database after startup
+    req(input$test_type)  # filled from the database after startup
 
     # keep existing peak values (if already calculated)
     cur <- summary_tbl_data()
     
     summary_tbl_data(data.frame(
-      Name = input$athlete_name,
+      Name = if (isTruthy(input$athlete_name)) input$athlete_name else NA_character_,
       Test = input$test_type,
       Limb = if (is.null(input$limb) || input$limb == "") NA_character_ else input$limb,
       `Body Mass (kg)`  = if (isTruthy(input$body_mass)) round(input$body_mass, 1) else NA_real_,
@@ -561,6 +572,17 @@ server <- function(input, output, session) {
     df <- summary_tbl_data()   # <- THIS is your 1-row summary data.frame
     req(nrow(df) == 1)
     
+    # 1b) Require athlete selected
+    if (is.na(df$Name) || !nzchar(df$Name)) {
+      showModal(modalDialog(
+        title = "Missing selection",
+        "Please select an athlete before saving.",
+        easyClose = TRUE,
+        footer = modalButton("OK")
+      ))
+      return()
+    }
+    
     # 2) Require limb selected
     if (is.na(df$Limb) || !nzchar(df$Limb)) {
       showModal(modalDialog(
@@ -640,8 +662,8 @@ server <- function(input, output, session) {
     nms <- sort(unique(athlete_db()$Name))
     cur <- isolate(collect_pick()) %||% isolate(input$athlete_name)
     collect_pick(NULL)
-    updateSelectInput(session, "athlete_name", choices = nms,
-                      selected = if (!is.null(cur) && cur %in% nms) cur else nms[1])
+    updateSelectizeInput(session, "athlete_name", choices = nms,
+                         selected = if (isTruthy(cur) && cur %in% nms) cur else character(0))
 
     # Setup "Edit existing" dropdown too (starts with no athlete selected)
     cur_edit <- isolate(input$setup_athlete)

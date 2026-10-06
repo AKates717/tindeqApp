@@ -74,7 +74,9 @@ ui <- page_navbar(
         width = "25%",
         # --- session metadata ---
         # Name and Test Type choices are filled from tindeq-athlete-DB.xlsx in server.R
-        selectInput("athlete_name", "Name", choices = NULL),
+        # Starts blank; pick from the list or start typing to search
+        selectizeInput("athlete_name", "Name", choices = NULL,
+                       options = list(placeholder = "Select or type a name")),
         # Pre-filled with the athlete's last recorded body mass; saved with each result
         numericInput("body_mass", "Body Mass (kg)", value = NA, min = 20, max = 250, step = 0.1),
         selectInput("test_type", "Test Type", choices = NULL),
