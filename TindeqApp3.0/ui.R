@@ -22,6 +22,52 @@ ui <- page_navbar(
   
   
   nav_panel(
+    "Setup",
+    layout_sidebar(
+      sidebar = sidebar(
+        width = "25%",
+        title = "Athlete Setup",
+        shinyWidgets::radioGroupButtons(
+          inputId   = "setup_mode",
+          label     = NULL,
+          choices   = c("New athlete" = "new", "Edit existing" = "edit"),
+          justified = TRUE,
+          selected  = "new"
+        ),
+        # New: type a name. Edit: pick an athlete, which fills in their saved values
+        conditionalPanel(
+          "input.setup_mode == 'new'",
+          textInput("setup_name", "Name", placeholder = "First Last")
+        ),
+        conditionalPanel(
+          "input.setup_mode == 'edit'",
+          selectizeInput("setup_athlete", "Name", choices = NULL,
+                         options = list(placeholder = "Select athlete"))
+        ),
+        selectizeInput("setup_squad", "Squad", choices = NULL,
+                       options = list(placeholder = "Select squad")),
+        # Only one test for now: Test and Angle are fixed
+        textInput("setup_test", "Test", value = "Quad ISO") |> tagAppendAttributes(readonly = NA, .cssSelector = "input"),
+        textInput("setup_angle", "Angle", value = "90") |> tagAppendAttributes(readonly = NA, .cssSelector = "input"),
+        selectizeInput("setup_seat_depth", "Seat Depth", choices = 1:7,
+                       options = list(placeholder = "Select 1–7", onInitialize = clear_on_init)),
+        selectizeInput("setup_seat_angle", "Seat Angle", choices = 1:4,
+                       options = list(placeholder = "Select 1–4", onInitialize = clear_on_init)),
+        selectizeInput("setup_chain_links", "Chain Links", choices = 1:20,
+                       options = list(placeholder = "Select 1–20", onInitialize = clear_on_init)),
+        actionButton("setup_save", "Save", class = "btn-success"),
+        textOutput("setup_status")
+      ),
+      card(
+        card_header("Athlete Database"),
+        gt_output("athlete_db_tbl")
+      )
+    )
+  ),
+
+
+
+  nav_panel(
     "Collect",
     layout_sidebar(
       sidebar = sidebar(
@@ -29,6 +75,8 @@ ui <- page_navbar(
         # --- session metadata ---
         # Name and Test Type choices are filled from tindeq-athlete-DB.xlsx in server.R
         selectInput("athlete_name", "Name", choices = NULL),
+        # Pre-filled with the athlete's last recorded body mass; saved with each result
+        numericInput("body_mass", "Body Mass (kg)", value = NA, min = 20, max = 250, step = 0.1),
         selectInput("test_type", "Test Type", choices = NULL),
         uiOutput("athlete_setup"),
         shinyWidgets::radioGroupButtons(
@@ -128,36 +176,6 @@ ui <- page_navbar(
 
 
   nav_panel(
-    "Add Athlete",
-    layout_sidebar(
-      sidebar = sidebar(
-        width = "25%",
-        title = "Add Athlete",
-        textInput("new_athlete_name", "Name", placeholder = "First Last"),
-        selectizeInput("new_athlete_squad", "Squad", choices = NULL,
-                       options = list(placeholder = "Select squad")),
-        # Only one test for now: Test and Angle are fixed
-        textInput("new_athlete_test", "Test", value = "Quad ISO") |> tagAppendAttributes(readonly = NA, .cssSelector = "input"),
-        textInput("new_athlete_angle", "Angle", value = "90") |> tagAppendAttributes(readonly = NA, .cssSelector = "input"),
-        selectizeInput("new_seat_depth", "Seat Depth", choices = 1:7,
-                       options = list(placeholder = "Select 1–7", onInitialize = clear_on_init)),
-        selectizeInput("new_seat_angle", "Seat Angle", choices = 1:4,
-                       options = list(placeholder = "Select 1–4", onInitialize = clear_on_init)),
-        selectizeInput("new_chain_links", "Chain Links", choices = 1:20,
-                       options = list(placeholder = "Select 1–20", onInitialize = clear_on_init)),
-        actionButton("save_athlete", "Save", class = "btn-success"),
-        textOutput("athlete_status")
-      ),
-      card(
-        card_header("Athlete Database"),
-        gt_output("athlete_db_tbl")
-      )
-    )
-  ),
-
-
-
-  nav_panel(
     "Report",
     layout_sidebar(
       fillable = FALSE,  # let the report scroll rather than squeeze the cards
@@ -168,6 +186,14 @@ ui <- page_navbar(
         selectizeInput("report_athlete", "Athlete", choices = NULL,
                        options = list(placeholder = "Select athlete")),
         selectInput("report_test", "Test", choices = NULL),
+        shinyWidgets::radioGroupButtons(
+          inputId   = "report_units",
+          label     = "Units",
+          choices   = c("kg", "N"),
+          justified = TRUE,
+          checkIcon = list(yes = icon("check")),
+          selected  = "kg"
+        ),
         uiOutput("report_download_ui")
       ),
       uiOutput("report_body")

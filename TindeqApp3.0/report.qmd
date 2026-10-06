@@ -41,7 +41,7 @@ if (nrow(rep$sessions) == 0) cat("*No results recorded for this test yet.*")
 #| results: asis
 if (nrow(rep$sessions) > 0) {
   cat("## Summary\n\n")
-  print(knitr::kable(fmt(rep$summary)))
+  print(knitr::kable(rep$summary, align = c("l", "c", "c")))
   cat("\n\n## Peak force over time\n\n")
 }
 ```
@@ -56,6 +56,7 @@ if (nrow(rep$sessions) > 0) print(rep$plot)
 #| results: asis
 if (nrow(rep$sessions) > 0) {
   cat("## Sessions (best trial per limb)\n\n")
-  print(knitr::kable(fmt(rep$sessions)))
+  # "simple" format: a pipe table would escape the "|" in Trials and stretch to full width
+  print(knitr::kable(fmt(rep$table), format = "simple", align = c("l", "r", "r", "r", "r", "c", "r")))
 }
 ```

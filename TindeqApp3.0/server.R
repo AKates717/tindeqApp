@@ -445,6 +445,7 @@ server <- function(input, output, session) {
     Name = NA_character_,
     Test = NA_character_,
     Limb = NA_character_,
+    `Body Mass (kg)`  = NA_real_,
     `Peak Force (kg)` = NA_real_,
     `Peak Force (N)`  = NA_real_,
     check.names = FALSE
@@ -461,6 +462,7 @@ server <- function(input, output, session) {
       Name = input$athlete_name,
       Test = input$test_type,
       Limb = if (is.null(input$limb) || input$limb == "") NA_character_ else input$limb,
+      `Body Mass (kg)`  = if (isTruthy(input$body_mass)) round(input$body_mass, 1) else NA_real_,
       `Peak Force (kg)` = cur$`Peak Force (kg)`,
       `Peak Force (N)`  = cur$`Peak Force (N)`,
       check.names = FALSE
@@ -472,14 +474,9 @@ server <- function(input, output, session) {
     cur <- summary_tbl_data()
     ph_raw <- peak_hold()
     
-    summary_tbl_data(data.frame(
-      Name = cur$Name,
-      Test = cur$Test,
-      Limb = cur$Limb,
-      `Peak Force (kg)` = if (is.na(ph_raw)) NA_real_ else round(ph_raw, 2),
-      `Peak Force (N)`  = if (is.na(ph_raw)) NA_real_ else round(ph_raw * g, 1),
-      check.names = FALSE
-    ))
+    cur$`Peak Force (kg)` <- if (is.na(ph_raw)) NA_real_ else round(ph_raw, 2)
+    cur$`Peak Force (N)`  <- if (is.na(ph_raw)) NA_real_ else round(ph_raw * g, 1)
+    summary_tbl_data(cur)
   })
   
   #GT
@@ -554,23 +551,6 @@ server <- function(input, output, session) {
   
   #Save Summary Data ----
   
-  #helper to ge the append working properly
-  ensure_trailing_newline <- function(path) {
-    if (!file.exists(path)) return(invisible(TRUE))
-    sz <- file.info(path)$size
-    if (is.na(sz) || sz < 1) return(invisible(TRUE))
-    
-    con <- file(path, open = "rb")
-    on.exit(close(con), add = TRUE)
-    seek(con, where = sz - 1, origin = "start")
-    last <- readChar(con, nchars = 1, useBytes = TRUE)
-    
-    if (!identical(last, "\n")) {
-      cat("\n", file = path, append = TRUE)
-    }
-    invisible(TRUE)
-  }
-  
   db_msg <- reactiveVal("")
   
   output$db_status <- renderText(db_msg())
@@ -586,6 +566,18 @@ server <- function(input, output, session) {
       showModal(modalDialog(
         title = "Missing selection",
         "Please select a limb before saving.",
+        easyClose = TRUE,
+        footer = modalButton("OK")
+      ))
+      return()
+    }
+    
+    # 2b) Require a plausible body mass
+    bm <- df$`Body Mass (kg)`
+    if (is.na(bm) || bm < 20 || bm > 250) {
+      showModal(modalDialog(
+        title = "Body mass",
+        "Please enter a body mass between 20 and 250 kg before saving.",
         easyClose = TRUE,
         footer = modalButton("OK")
       ))
@@ -608,23 +600,9 @@ server <- function(input, output, session) {
     out$timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     
     
-    # 5) Write/append to data/tindeq_results.csv
+    # 5) Write/append to data/tindeq_results.csv (columns matched by header name)
     dir.create("data", showWarnings = FALSE, recursive = TRUE)
-    path <- file.path("data", "tindeq_results.csv")
-    
-    if (!file.exists(path)) {
-      write.csv(out, path, row.names = FALSE)
-    } else {
-      ensure_trailing_newline(path)  # <-- ADD THIS LINE
-      write.table(
-        out, path,
-        sep = ",",
-        row.names = FALSE,
-        col.names = FALSE,
-        append = TRUE,
-        eol = "\n"
-      )
-    }
+    append_result(out)
     
     
     db_msg("Saved to database")
@@ -646,21 +624,35 @@ server <- function(input, output, session) {
   
   
   
-  #Athlete Database ----
+  #Athlete Database / Setup ----
   athlete_db <- reactiveVal(read_athlete_db())
-  athlete_msg <- reactiveVal("")
+  setup_msg  <- reactiveVal("")
+  setup_test <- "Quad ISO"  # only one test for now (fixed on the Setup page)
+  collect_pick <- reactiveVal(NULL)  # athlete to select on Collect after a Setup save
 
   # Dropdowns driven by the "lists" sheet (read once at startup)
   updateSelectInput(session, "test_type", choices = read_list("Test"))
-  updateSelectizeInput(session, "new_athlete_squad", choices = read_list("Squad"),
+  updateSelectizeInput(session, "setup_squad", choices = read_list("Squad"),
                        selected = character(0))
 
   # Collect tab athlete dropdown follows the database (keeps current pick if still present)
   observeEvent(athlete_db(), {
     nms <- sort(unique(athlete_db()$Name))
-    cur <- isolate(input$athlete_name)
+    cur <- isolate(collect_pick()) %||% isolate(input$athlete_name)
+    collect_pick(NULL)
     updateSelectInput(session, "athlete_name", choices = nms,
                       selected = if (!is.null(cur) && cur %in% nms) cur else nms[1])
+
+    # Setup "Edit existing" dropdown too (starts with no athlete selected)
+    cur_edit <- isolate(input$setup_athlete)
+    updateSelectizeInput(session, "setup_athlete", choices = nms,
+                         selected = if (isTruthy(cur_edit) && cur_edit %in% nms) cur_edit else character(0))
+  })
+
+  # Pre-fill body mass with the athlete's last recorded value (blank if none yet)
+  observeEvent(input$athlete_name, {
+    updateNumericInput(session, "body_mass",
+                       value = latest_body_mass(results_data(), input$athlete_name))
   })
 
   # Setup values for the selected athlete + test, shown under Test Type
@@ -679,7 +671,7 @@ server <- function(input, output, session) {
     tags$small(class = "text-muted d-block mb-3", style = "margin-top: -0.5rem;", txt)
   })
 
-  output$athlete_status <- renderText(athlete_msg())
+  output$setup_status <- renderText(setup_msg())
 
   output$athlete_db_tbl <- gt::render_gt({
     gt::gt(athlete_db()) |>
@@ -687,79 +679,90 @@ server <- function(input, output, session) {
       gt::cols_align(align = "center")
   })
 
-  observeEvent(input$save_athlete, {
-    nm <- trimws(input$new_athlete_name)
+  # Fill (or clear) the setup fields
+  fill_setup_fields <- function(row = NULL) {
+    val <- function(col) if (is.null(row)) character(0) else as.character(row[[col]][1])
+    updateSelectizeInput(session, "setup_squad",       selected = val("Squad"))
+    updateSelectizeInput(session, "setup_seat_depth",  selected = val("Seat Depth"))
+    updateSelectizeInput(session, "setup_seat_angle",  selected = val("Seat Angle"))
+    updateSelectizeInput(session, "setup_chain_links", selected = val("Chain Links"))
+  }
+
+  # Edit mode: picking an athlete loads their saved values
+  observeEvent(list(input$setup_athlete, input$setup_mode), {
+    if (identical(input$setup_mode, "edit") && isTruthy(input$setup_athlete)) {
+      row <- athlete_db() |> filter(Name == input$setup_athlete, Test == setup_test)
+      fill_setup_fields(if (nrow(row) > 0) row else NULL)
+    } else {
+      fill_setup_fields(NULL)
+    }
+  }, ignoreInit = TRUE)
+
+  show_setup_error <- function(title, msg) {
+    showModal(modalDialog(title = title, msg, easyClose = TRUE, footer = modalButton("OK")))
+  }
+
+  observeEvent(input$setup_save, {
+    editing <- identical(input$setup_mode, "edit")
+    nm <- trimws(if (editing) input$setup_athlete %||% "" else input$setup_name)
 
     if (!nzchar(nm)) {
-      showModal(modalDialog(
-        title = "Missing name",
-        "Please enter the athlete's name before saving.",
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
-      return()
+      return(show_setup_error("Missing name",
+        if (editing) "Please select the athlete to edit." else "Please enter the athlete's name before saving."))
     }
 
-    if (tolower(nm) %in% tolower(athlete_db()$Name)) {
-      showModal(modalDialog(
-        title = "Athlete already exists",
-        paste0("'", nm, "' is already in the database."),
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
-      return()
+    if (!editing && tolower(nm) %in% tolower(athlete_db()$Name)) {
+      return(show_setup_error("Athlete already exists",
+        paste0("'", nm, "' is already in the database. Use 'Edit existing' to change their setup.")))
     }
 
     # Every dropdown must be chosen (they start blank with a placeholder)
-    picks <- list(Squad         = input$new_athlete_squad,
-                  `Seat Depth`  = input$new_seat_depth,
-                  `Seat Angle`  = input$new_seat_angle,
-                  `Chain Links` = input$new_chain_links)
+    picks <- list(Squad         = input$setup_squad,
+                  `Seat Depth`  = input$setup_seat_depth,
+                  `Seat Angle`  = input$setup_seat_angle,
+                  `Chain Links` = input$setup_chain_links)
     blank <- names(picks)[!vapply(picks, isTruthy, logical(1))]
     if (length(blank) > 0) {
-      showModal(modalDialog(
-        title = "Missing selection",
-        paste("Please select:", paste(blank, collapse = ", ")),
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
-      return()
+      return(show_setup_error("Missing selection", paste("Please select:", paste(blank, collapse = ", "))))
     }
 
-    new_row <- data.frame(
-      Name          = nm,
-      Squad         = input$new_athlete_squad,
-      Test          = "Quad ISO",
-      Angle         = 90,
-      `Seat Depth`  = as.integer(input$new_seat_depth),
-      `Seat Angle`  = as.integer(input$new_seat_angle),
-      `Chain Links` = as.integer(input$new_chain_links),
-      check.names = FALSE
+    values <- list(
+      Squad            = input$setup_squad,
+      `Seat Depth`     = as.integer(input$setup_seat_depth),
+      `Seat Angle`     = as.integer(input$setup_seat_angle),
+      `Chain Links`    = as.integer(input$setup_chain_links)
     )
 
     ok <- tryCatch({
-      append_athlete(new_row)
+      if (editing && any(athlete_db()$Name == nm & athlete_db()$Test == setup_test)) {
+        update_athlete(nm, setup_test, values)
+      } else {
+        # New athlete (or an existing athlete with no row for this test yet)
+        append_athlete(as.data.frame(c(list(Name = nm, Test = setup_test, Angle = 90), values),
+                                     check.names = FALSE))
+      }
       TRUE
     }, error = function(e) {
-      showModal(modalDialog(
-        title = "Could not save",
-        paste("Saving failed (is the file open in Excel?):", conditionMessage(e)),
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
+      show_setup_error("Could not save",
+                       paste("Saving failed (is the file open in Excel?):", conditionMessage(e)))
       FALSE
     })
     if (!ok) return()
 
+    # Ready to test: select this athlete on the Collect tab (applied when the database refreshes)
+    collect_pick(nm)
     athlete_db(read_athlete_db())
-    updateTextInput(session, "new_athlete_name", value = "")
-    for (id in c("new_athlete_squad", "new_seat_depth", "new_seat_angle", "new_chain_links")) {
-      updateSelectizeInput(session, id, selected = character(0))
+
+    if (editing) {
+      setup_msg(paste("Updated", nm))
+    } else {
+      updateTextInput(session, "setup_name", value = "")
+      fill_setup_fields(NULL)
+      setup_msg(paste("Saved", nm))
     }
-    athlete_msg(paste("Saved", nm))
 
     later::later(function() {
-      athlete_msg("")
+      setup_msg("")
     }, delay = 3)
   })
 
@@ -782,7 +785,8 @@ server <- function(input, output, session) {
 
   report <- reactive({
     req(input$report_athlete, input$report_test)
-    build_report(input$report_athlete, input$report_test, results_data(), athlete_db())
+    build_report(input$report_athlete, input$report_test, results_data(), athlete_db(),
+                 units = input$report_units %||% "kg")
   })
 
   output$report_body <- renderUI({
@@ -814,18 +818,21 @@ server <- function(input, output, session) {
 
   output$report_summary_tbl <- gt::render_gt({
     gt::gt(report()$summary) |>
-      gt::fmt_date(`Last Tested`, date_style = "yMMMd") |>
       ak_gt_theme3() |>
-      gt::cols_align(align = "center")
+      gt::cols_align(align = "center") |>
+      gt::cols_align(align = "left", columns = 1) |>
+      gt::tab_style(gt::cell_text(weight = "600"), gt::cells_body(columns = 1))
   })
 
   output$report_plot <- renderPlot(report_plot(report()))
 
   output$report_sessions_tbl <- gt::render_gt({
-    gt::gt(report()$sessions) |>
+    gt::gt(report()$table) |>
       gt::fmt_date(Date, date_style = "yMMMd") |>
       ak_gt_theme3() |>
-      gt::cols_align(align = "center")
+      gt::cols_align(align = "center") |>
+      gt::tab_style(gt::cell_text(weight = "600"),
+                    gt::cells_body(columns = Symmetry, rows = Symmetry != "—"))
   })
 
   # Download button only appears once an athlete is selected

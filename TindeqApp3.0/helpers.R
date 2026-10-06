@@ -159,6 +159,24 @@ append_athlete <- function(row, path = athlete_db_path) {
   invisible(TRUE)
 }
 
+# Overwrites the given columns of one existing athlete + test row in place.
+# `values` is a named list, e.g. list(Squad = "SBX", `Chain Links` = 12L)
+update_athlete <- function(name, test, values, path = athlete_db_path) {
+  db <- read_athlete_db(path)
+  i <- which(db$Name == name & db$Test == test)
+  if (length(i) != 1) stop("Expected one row for ", name, " / ", test, ", found ", length(i))
+  missing <- setdiff(names(values), names(db))
+  if (length(missing) > 0) stop("Missing column(s): ", paste(missing, collapse = ", "))
+
+  wb <- openxlsx::loadWorkbook(path)
+  for (col in names(values)) {
+    openxlsx::writeData(wb, athlete_db_sheet, values[[col]],
+                        startCol = match(col, names(db)), startRow = i + 1)  # +1 for header
+  }
+  openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
+  invisible(TRUE)
+}
+
 
 ## Report helpers ----
 
@@ -168,45 +186,73 @@ limb_colours <- c(Left = "#2C3E50", Both = "#A7A9AC", Right = "#D71920")
 
 read_results <- function(path = results_path) {
   readr::read_csv(path, show_col_types = FALSE) |>
-    mutate(Date = as.Date(substr(timestamp, 1, 10)))
+    mutate(Date = as.Date(substr(timestamp, 1, 10)),
+           `Body Mass (kg)` = as.numeric(`Body Mass (kg)`))
+}
+
+# Most recent body mass recorded for an athlete in the results (NA if none)
+latest_body_mass <- function(results, athlete) {
+  d <- results[results$Name == athlete & !is.na(results$`Body Mass (kg)`), ]
+  if (nrow(d) == 0) NA_real_ else tail(d$`Body Mass (kg)`[order(d$timestamp)], 1)
+}
+
+# Appends result row(s), matching columns to the file's header by name
+append_result <- function(row, path = results_path) {
+  if (!file.exists(path)) return(readr::write_csv(row, path, na = ""))
+  headers <- names(read.csv(path, nrows = 0, check.names = FALSE))
+  missing <- setdiff(headers, names(row))
+  if (length(missing) > 0) stop("Missing column(s): ", paste(missing, collapse = ", "))
+  # Make sure the file ends with a newline before appending
+  sz <- file.size(path)
+  if (sz > 0) {
+    con <- file(path, "rb"); seek(con, sz - 1); last <- readBin(con, "raw", 1); close(con)
+    if (last != as.raw(10)) cat("\n", file = path, append = TRUE)
+  }
+  readr::write_csv(row[headers], path, append = TRUE, na = "")
 }
 
 # Everything the report needs for one athlete + test, used by both the
-# Report page and the PDF so they always match
-build_report <- function(athlete, test, results, db) {
+# Report page and the PDF so they always match. `units` is "kg" or "N"
+build_report <- function(athlete, test, results, db, units = "kg") {
   trials <- results |> filter(Name == athlete, Test == test)
 
   # Best trial per limb per day (summaries are skipped when there's no data;
-  # max() on no rows just warns)
+  # max() on no rows just warns). Force = the selected unit
   sessions <- if (nrow(trials) == 0) trials[0, ] else trials |>
     group_by(Date, Limb) |>
-    summarise(`Peak Force (kg)` = max(`Peak Force (kg)`),
-              `Peak Force (N)`  = max(`Peak Force (N)`),
+    summarise(kg = max(`Peak Force (kg)`),
+              N  = max(`Peak Force (N)`),
               Trials = n(), .groups = "drop") |>
-    mutate(Limb = factor(Limb, levels = limb_levels)) |>
+    mutate(Limb  = factor(Limb, levels = limb_levels),
+           Force = if (units == "N") N else kg) |>
+    # Body mass recorded that day (last entered value; NA for older results)
+    left_join(trials |>
+                filter(!is.na(`Body Mass (kg)`)) |>
+                group_by(Date) |>
+                summarise(BM = last(`Body Mass (kg)`, order_by = timestamp), .groups = "drop"),
+              by = "Date") |>
     arrange(desc(Date), Limb)
 
-  summary <- if (nrow(sessions) == 0) NULL else sessions |>
-    group_by(Limb) |>
-    summarise(`Best (kg)`   = max(`Peak Force (kg)`),
-              `Best (N)`    = max(`Peak Force (N)`),
-              `Latest (kg)` = last(`Peak Force (kg)`, order_by = Date),
-              Sessions      = n_distinct(Date),
-              `Last Tested` = max(Date), .groups = "drop")
+  has_data <- nrow(sessions) > 0
+  symmetry <- if (has_data) day_symmetry(sessions) else NULL
 
   setup <- db |> filter(Name == athlete, Test == test)
   squad <- db$Squad[db$Name == athlete][1]
+  body_mass <- latest_body_mass(trials, athlete)
 
   list(
     athlete   = athlete,
     test      = test,
+    units     = units,
     squad     = if (is.na(squad)) "—" else squad,
     setup     = setup,
     setup_txt = if (nrow(setup) == 0) "No setup saved for this test" else
-      sprintf("Angle %s° · Seat depth %s · Seat angle %s · Chain links %s",
+      sprintf("Body mass %s · Angle %s° · Seat depth %s · Seat angle %s · Chain links %s",
+              if (is.na(body_mass)) "—" else paste(body_mass, "kg"),
               setup$Angle[1], setup$`Seat Depth`[1], setup$`Seat Angle`[1], setup$`Chain Links`[1]),
     sessions  = sessions,
-    summary   = summary,
+    summary   = if (has_data) report_summary(sessions, symmetry, units) else NULL,
+    table     = if (has_data) session_table(sessions, symmetry, units) else NULL,
     generated = Sys.Date()
   )
 }
@@ -214,6 +260,80 @@ build_report <- function(athlete, test, results, db) {
 # "Oct 5, 2026" (no leading zero on the day; %-d isn't portable to Windows)
 fmt_date <- function(d) {
   paste0(format(d, "%b "), as.integer(format(d, "%d")), format(d, ", %Y"))
+}
+
+# kg to 2 decimals, N to 1; "—" when there's no value
+fmt_force <- function(x, units) {
+  if (length(x) == 0 || is.na(x[1])) return("—")
+  formatC(x[1], format = "f", digits = if (units == "N") 1 else 2)
+}
+
+# One row per day with both Left and Right: which limb is stronger and by how
+# much, e.g. 70.18 vs 66.72 -> Left, 5.2. Always from kg so it doesn't change with units
+day_symmetry <- function(sessions) {
+  sessions |>
+    filter(Limb %in% c("Left", "Right")) |>
+    group_by(Date) |>
+    filter(n_distinct(Limb) == 2) |>
+    summarise(L = kg[Limb == "Left"][1], R = kg[Limb == "Right"][1], .groups = "drop") |>
+    mutate(Stronger = if_else(L >= R, "Left", "Right"),
+           Pct      = (pmax(L, R) / pmin(L, R) - 1) * 100) |>
+    select(Date, Stronger, Pct)
+}
+
+# Summary table: one column per limb (Left, Right), one row per metric.
+# Relative = best / body mass recorded in that same session (N/kg, or kg/kg = x body weight)
+report_summary <- function(sessions, symmetry, units) {
+  limb_stats <- function(limb) {
+    d <- sessions[sessions$Limb == limb, ]
+    if (nrow(d) == 0) return(list(date = "—", best = "—", rel = "—"))
+    b <- d[which.max(d$Force), ]
+    list(date = fmt_date(max(d$Date)),
+         best = fmt_force(b$Force, units),
+         rel  = if (is.na(b$BM)) "—" else formatC(b$Force / b$BM, format = "f", digits = 2))
+  }
+  L <- limb_stats("Left")
+  R <- limb_stats("Right")
+
+  # Symmetry from the most recent session only ("—" if a limb wasn't tested that day)
+  latest <- max(sessions$Date)
+  s <- symmetry[symmetry$Date == latest, ]
+  sym <- c(Left = "—", Right = "—")
+  if (nrow(s) == 1) sym[[s$Stronger]] <- sprintf("+%.1f%%", s$Pct)
+
+  data.frame(
+    ` `   = c("Last Tested", paste0("Abs. Peak Force (", units, ")"),
+              paste0("Rel. Peak Force (", units, "/kg)"), "Symmetry"),
+    Left  = c(L$date, L$best, L$rel, sym[["Left"]]),
+    Right = c(R$date, R$best, R$rel, sym[["Right"]]),
+    check.names = FALSE
+  )
+}
+
+# Sessions table: one row per day with each limb's best, relative best (that
+# day's body mass), trials per limb ("2 | 2" = Left | Right) and symmetry
+# (stronger limb named, e.g. "Left +5.2%")
+session_table <- function(sessions, symmetry, units) {
+  rel <- function(force, bm) {
+    if (length(force) == 0 || is.na(bm)) "—" else formatC(force[1] / bm, format = "f", digits = 2)
+  }
+  sessions |>
+    group_by(Date) |>
+    summarise(Left     = fmt_force(Force[Limb == "Left"], units),
+              Right    = fmt_force(Force[Limb == "Right"], units),
+              RelLeft  = rel(Force[Limb == "Left"], first(BM)),
+              RelRight = rel(Force[Limb == "Right"], first(BM)),
+              Trials   = paste(sum(Trials[Limb == "Left"]), "|", sum(Trials[Limb == "Right"])),
+              .groups = "drop") |>
+    left_join(symmetry, by = "Date") |>
+    mutate(Symmetry = if_else(is.na(Pct), "—", sprintf("%s +%.1f%%", Stronger, Pct))) |>
+    select(Date, Left, Right, RelLeft, RelRight, Trials, Symmetry) |>
+    arrange(desc(Date)) |>
+    rename(!!paste0("Left (", units, ")")      := Left,
+           !!paste0("Right (", units, ")")     := Right,
+           !!paste0("Left (", units, "/kg)")   := RelLeft,
+           !!paste0("Right (", units, "/kg)")  := RelRight,
+           `Trials (L | R)` = Trials)
 }
 
 # Grouped bars: Left and Right side by side for each test date
@@ -225,13 +345,13 @@ report_plot <- function(rep) {
            Limb = factor(Limb, levels = intersect(limb_levels, c("Left", "Right", as.character(Limb))))) |>
     tidyr::complete(Day, Limb)  # keeps each limb in its own slot when one wasn't tested that day
 
-  ggplot(df, aes(Day, `Peak Force (kg)`, fill = Limb)) +
+  ggplot(df, aes(Day, Force, fill = Limb)) +
     geom_col(position = position_dodge(width = 0.8), width = 0.75, na.rm = TRUE) +
-    geom_text(aes(label = round(`Peak Force (kg)`, 1)),
+    geom_text(aes(label = round(Force, if (rep$units == "N") 0 else 1)),
               position = position_dodge(width = 0.8), vjust = -0.4, size = 3.5, na.rm = TRUE) +
     scale_fill_manual(values = limb_colours, drop = FALSE) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
-    labs(x = NULL, y = "Peak force (kg)", fill = NULL) +
+    labs(x = NULL, y = paste0("Peak force (", rep$units, ")"), fill = NULL) +
     theme_minimal(base_size = 13) +
     theme(legend.position = "top",
           panel.grid.major.x = element_blank(),
