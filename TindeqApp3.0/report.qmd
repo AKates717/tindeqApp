@@ -1,0 +1,61 @@
+---
+format:
+  typst:
+    papersize: us-letter
+    margin:
+      x: 2cm
+      y: 2cm
+    fig-format: png
+knitr:
+  opts_chunk:
+    echo: false
+    message: false
+    warning: false
+    dev: ragg_png
+    dpi: 200
+---
+
+```{r}
+# Data is prepared by render_report_pdf() in helpers.R
+library(ggplot2)
+rep <- readRDS("report.rds")
+fmt_date <- rep$fmt_date
+fmt <- function(df) {
+  df[] <- lapply(df, function(x) if (inherits(x, "Date")) fmt_date(x) else x)
+  df
+}
+```
+
+# `r rep$athlete`
+
+**Squad:** `r rep$squad` · **Test:** `r rep$test` · **Generated:** `r fmt_date(rep$generated)`
+
+**Setup:** `r rep$setup_txt`
+
+```{r}
+#| results: asis
+if (nrow(rep$sessions) == 0) cat("*No results recorded for this test yet.*")
+```
+
+```{r}
+#| results: asis
+if (nrow(rep$sessions) > 0) {
+  cat("## Summary\n\n")
+  print(knitr::kable(fmt(rep$summary)))
+  cat("\n\n## Peak force over time\n\n")
+}
+```
+
+```{r}
+#| fig-width: 7
+#| fig-height: 3.2
+if (nrow(rep$sessions) > 0) print(rep$plot)
+```
+
+```{r}
+#| results: asis
+if (nrow(rep$sessions) > 0) {
+  cat("## Sessions (best trial per limb)\n\n")
+  print(knitr::kable(fmt(rep$sessions)))
+}
+```

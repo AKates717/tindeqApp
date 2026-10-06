@@ -1,21 +1,21 @@
-"Name","Test","Limb","Peak Force (kg)","Peak Force (N)","timestamp"
-"Andrew Kates","Quads","Left",4.5,44.1,"2026-01-14 12:15:13"
-"Andrew Kates","Quads","Left",6.33,62.1,"2026-01-14 12:15:27"
-"Andrew Kates","Quads","Right",5.33,52.2,"2026-01-14 12:16:08"
-"Andrew Kates","Quads","Right",7.47,73.3,"2026-01-14 12:16:14"
-"Andrew Kates","Quads","Left",5.75,56.4,"2026-01-15 11:30:03"
-"Andrew Kates","Quads","Right",5.28,51.8,"2026-01-15 12:10:55"
-"Andrew Kates","Quads","Right",55.02,539.6,"2026-01-19 14:05:49"
-"Andrew Kates","Quads","Right",66.72,654.3,"2026-01-19 14:06:15"
-"Andrew Kates","Quads","Left",56.64,555.5,"2026-01-19 14:07:21"
-"Andrew Kates","Quads","Left",70.18,688.2,"2026-01-19 14:07:47"
-"Andrew Kates","Hamstrings","Left",9.25,90.7,"2026-01-19 16:14:33"
-"Andrew Kates","Hamstrings","Left",11.25,110.3,"2026-01-19 16:14:48"
-"Andrew Kates","Hamstrings","Right",9.81,96.2,"2026-01-19 16:15:09"
-"Andrew Kates","Hamstrings","Right",11.2,109.8,"2026-01-19 16:15:23"
-"Andrew Kates","Quads","Left",13.19,129.4,"2026-05-11 11:42:35"
-"Andrew Kates","Quads","Left",12.24,120,"2026-05-11 12:23:19"
-"Andrew Kates","Quads","Left",13.57,133.1,"2026-05-11 12:23:29"
-"Homer Simpson","Quads","Right",42.45,416.3,"2026-06-04 14:22:07"
-"Homer Simpson","Quads","Right",53.92,528.8,"2026-06-04 14:36:58"
-"Homer Simpson","Quads","Right",55.88,548,"2026-06-04 14:39:26"
+Name,Test,Limb,Peak Force (kg),Peak Force (N),timestamp
+Andrew Kates,Quad ISO,Left,4.5,44.1,2026-01-14 12:15
+Andrew Kates,Quad ISO,Left,6.33,62.1,2026-01-14 12:15
+Andrew Kates,Quad ISO,Right,5.33,52.2,2026-01-14 12:16
+Andrew Kates,Quad ISO,Right,7.47,73.3,2026-01-14 12:16
+Andrew Kates,Quad ISO,Left,5.75,56.4,2026-01-15 11:30
+Andrew Kates,Quad ISO,Right,5.28,51.8,2026-01-15 12:10
+Andrew Kates,Quad ISO,Right,55.02,539.6,2026-01-19 14:05
+Andrew Kates,Quad ISO,Right,66.72,654.3,2026-01-19 14:06
+Andrew Kates,Quad ISO,Left,56.64,555.5,2026-01-19 14:07
+Andrew Kates,Quad ISO,Left,70.18,688.2,2026-01-19 14:07
+Andrew Kates,Hamstrings,Left,9.25,90.7,2026-01-19 16:14
+Andrew Kates,Hamstrings,Left,11.25,110.3,2026-01-19 16:14
+Andrew Kates,Hamstrings,Right,9.81,96.2,2026-01-19 16:15
+Andrew Kates,Hamstrings,Right,11.2,109.8,2026-01-19 16:15
+Andrew Kates,Quad ISO,Left,13.19,129.4,2026-05-11 11:42
+Andrew Kates,Quad ISO,Left,12.24,120,2026-05-11 12:23
+Andrew Kates,Quad ISO,Left,13.57,133.1,2026-05-11 12:23
+Homer Simpson,Quad ISO,Right,42.45,416.3,2026-06-04 14:22
+Homer Simpson,Quad ISO,Right,53.92,528.8,2026-06-04 14:36
+Homer Simpson,Quad ISO,Right,55.88,548,2026-06-04 14:39

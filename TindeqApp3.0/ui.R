@@ -27,12 +27,10 @@ ui <- page_navbar(
       sidebar = sidebar(
         width = "25%",
         # --- session metadata ---
-        selectInput("athlete_name", "Name",
-                    choices = c("Andrew Kates", "Homer Simpson", "Frank Reynolds", "Marielle Thompson"),
-                    selected = "Andrew Kates"),
-        selectInput("test_type", "Test Type",
-                    choices = c("Quads", "Hamstrings"),
-                    selected = "Quads"),
+        # Name and Test Type choices are filled from tindeq-athlete-DB.xlsx in server.R
+        selectInput("athlete_name", "Name", choices = NULL),
+        selectInput("test_type", "Test Type", choices = NULL),
+        uiOutput("athlete_setup"),
         shinyWidgets::radioGroupButtons(
           inputId  = "limb",
           label    = "Limb",
@@ -119,11 +117,60 @@ ui <- page_navbar(
           actionButton("save_db", "Save to database")
         ),
         textOutput("db_status")
-        
-        
-        
+
+
+
       )
-      
+
+    )
+  ),
+
+
+
+  nav_panel(
+    "Add Athlete",
+    layout_sidebar(
+      sidebar = sidebar(
+        width = "25%",
+        title = "Add Athlete",
+        textInput("new_athlete_name", "Name", placeholder = "First Last"),
+        selectizeInput("new_athlete_squad", "Squad", choices = NULL,
+                       options = list(placeholder = "Select squad")),
+        # Only one test for now: Test and Angle are fixed
+        textInput("new_athlete_test", "Test", value = "Quad ISO") |> tagAppendAttributes(readonly = NA, .cssSelector = "input"),
+        textInput("new_athlete_angle", "Angle", value = "90") |> tagAppendAttributes(readonly = NA, .cssSelector = "input"),
+        selectizeInput("new_seat_depth", "Seat Depth", choices = 1:7,
+                       options = list(placeholder = "Select 1–7", onInitialize = clear_on_init)),
+        selectizeInput("new_seat_angle", "Seat Angle", choices = 1:4,
+                       options = list(placeholder = "Select 1–4", onInitialize = clear_on_init)),
+        selectizeInput("new_chain_links", "Chain Links", choices = 1:20,
+                       options = list(placeholder = "Select 1–20", onInitialize = clear_on_init)),
+        actionButton("save_athlete", "Save", class = "btn-success"),
+        textOutput("athlete_status")
+      ),
+      card(
+        card_header("Athlete Database"),
+        gt_output("athlete_db_tbl")
+      )
+    )
+  ),
+
+
+
+  nav_panel(
+    "Report",
+    layout_sidebar(
+      fillable = FALSE,  # let the report scroll rather than squeeze the cards
+      sidebar = sidebar(
+        width = "25%",
+        title = "Report",
+        # Choices are filled from tindeq-athlete-DB.xlsx in server.R
+        selectizeInput("report_athlete", "Athlete", choices = NULL,
+                       options = list(placeholder = "Select athlete")),
+        selectInput("report_test", "Test", choices = NULL),
+        uiOutput("report_download_ui")
+      ),
+      uiOutput("report_body")
     )
   )
 )
